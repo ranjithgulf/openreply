@@ -1,5 +1,5 @@
 
-name: Build OpenReply Docker Image
+name: Build Optimized OpenReply Docker Image
 
 on:
   workflow_dispatch:
@@ -19,30 +19,42 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build Docker image
-        run: docker build -t openreply:latest .
-
-      - name: Export Docker image
-        run: docker save openreply:latest | gzip -1 > openreply-image.tar.gz
-
-      - name: Check image size
+      - name: Build optimized Docker image
         run: |
-          echo "=== Docker image size ==="
-          docker image inspect openreply:latest --format 'Image size: {{.Size}} bytes'
+          docker build \
+            -f Dockerfile.optimized \
+            -t openreply:optimized \
+            .
 
-          echo "=== Docker image details ==="
-          docker images openreply:latest
+      - name: Export optimized Docker image
+        run: |
+          docker save openreply:optimized \
+            | gzip -1 > openreply-optimized.tar.gz
 
-          echo "=== Compressed archive size ==="
-          ls -lh openreply-image.tar.gz
+      - name: Check optimized image size
+        run: |
+          echo "=== Optimized Docker image ==="
+          docker image inspect openreply:optimized \
+            --format 'Image size: {{.Size}} bytes'
 
-          echo "=== Uncompressed archive size ==="
-          gzip -l openreply-image.tar.gz
+          echo "=== Docker disk usage ==="
+          docker images openreply:optimized
 
-      - name: Upload Docker image
+          echo "=== Compressed archive ==="
+          ls -lh openreply-optimized.tar.gz
+
+          echo "=== Uncompressed archive ==="
+          gzip -l openreply-optimized.tar.gz
+
+          echo "=== Docker image layers ==="
+          docker history openreply:optimized \
+            --format 'Size: {{.Size}} | {{.CreatedBy}}' \
+            | head -20
+
+      - name: Upload optimized Docker image
         uses: actions/upload-artifact@v4
         with:
-          name: openreply-docker-image
-          path: openreply-image.tar.gz
+          name: openreply-optimized-image
+          path: openreply-optimized.tar.gz
           retention-days: 1
           if-no-files-found: error
