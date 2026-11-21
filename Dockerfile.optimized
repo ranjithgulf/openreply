@@ -1,0 +1,53 @@
+
+# Stage 1: Build the Next.js application
+FROM node:20-bookworm-slim AS builder
+
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+
+RUN npm ci
+
+COPY . .
+
+RUN npm run build
+
+# Stage 2: Optimized runtime
+FROM node:20-bookworm-slim AS runner
+
+WORKDIR /app
+
+ENV NODE_ENV=production
+ENV PORT=3000
+ENV HOSTNAME=0.0.0.0
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+       openssl \
+       ca-certificates \
+       wget \
+    && rm -rf /var/lib/apt/lists/*
+
+# Standalone Next.js application
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
+COPY --from=builder /app/public ./public
+
+# Prisma runtime and migrations
+COPY --from=builder /app/app/generated ./app/generated
+COPY --from=builder /app/prisma ./prisma
+COPY --from=builder /app/prisma.config.ts ./prisma.config.ts
+
+# Background worker and cron files
+COPY --from=builder /app/worker ./worker
+COPY --from=builder /app/lib ./lib
+COPY --from=builder /app/scripts ./scripts
+COPY --from=builder /app/tsconfig.json ./tsconfig.json
+COPY --from=builder /app/package.json ./package.json
+
+# Worker tooling and database migrations
+COPY --from=builder /app/node_modules ./node_modules
+
+EXPOSE 3000
+
+CMD ["node", "server.js"]
