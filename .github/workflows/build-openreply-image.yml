@@ -1,0 +1,37 @@
+
+name: Build OpenReply Docker Image
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        run: docker build -t openreply:latest .
+
+      - name: Export Docker image
+        run: docker save openreply:latest | gzip -1 > openreply-image.tar.gz
+
+      - name: Check image size
+        run: ls -lh openreply-image.tar.gz
+
+      - name: Upload Docker image
+        uses: actions/upload-artifact@v4
+        with:
+          name: openreply-docker-image
+          path: openreply-image.tar.gz
+          retention-days: 1
+          if-no-files-found: error
