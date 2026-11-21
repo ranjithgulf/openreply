@@ -26,7 +26,18 @@ jobs:
         run: docker save openreply:latest | gzip -1 > openreply-image.tar.gz
 
       - name: Check image size
-        run: ls -lh openreply-image.tar.gz
+        run: |
+          echo "=== Docker image size ==="
+          docker image inspect openreply:latest --format 'Image size: {{.Size}} bytes'
+
+          echo "=== Docker image details ==="
+          docker images openreply:latest
+
+          echo "=== Compressed archive size ==="
+          ls -lh openreply-image.tar.gz
+
+          echo "=== Uncompressed archive size ==="
+          gzip -l openreply-image.tar.gz
 
       - name: Upload Docker image
         uses: actions/upload-artifact@v4
