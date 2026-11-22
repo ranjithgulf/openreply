@@ -1,0 +1,82 @@
+name: Meta Unified Login build (runtime delta)
+
+# Verifies the branch, then compiles it in the production Dockerfile's own
+# build stage (node:20-slim, /app) and packages only what changes at runtime
+# (.next, lib, package.json). The small server applies it as a thin layer on
+# top of the image it already runs, so nothing is built there and the large
+# node_modules layer is reused unchanged.
+
+on:
+  push:
+    branches: [feature/meta-unified-login]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - run: npm ci
+      - run: npm run db:generate
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+
+  delta:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build with the production Dockerfile (build stage only)
+        run: docker build --target build -t openreply-build:ci .
+
+      - name: Extract runtime delta
+        run: |
+          set -euo pipefail
+          cid=$(docker create openreply-build:ci)
+          mkdir -p delta/app
+          docker cp "$cid:/app/.next" delta/app/.next
+          docker cp "$cid:/app/lib" delta/app/lib
+          docker cp "$cid:/app/package.json" delta/app/package.json
+          ver() { docker run --rm --entrypoint node openreply-build:ci -p "require('/app/node_modules/$1/package.json').version"; }
+          {
+            echo "commit=${GITHUB_SHA}"
+            echo "build_id=$(cat delta/app/.next/BUILD_ID)"
+            echo "next=$(ver next)"
+            echo "next-auth=$(ver next-auth)"
+            echo "@auth/core=$(ver @auth/core)"
+            echo "jose=$(ver jose)"
+            echo "prisma-client=$(ver @prisma/client)"
+          } > delta/MANIFEST
+          docker rm "$cid" >/dev/null
+          rm -rf delta/app/.next/cache
+          tar -C delta -czf openreply-meta-unified-login-delta.tar.gz MANIFEST app
+          sha256sum openreply-meta-unified-login-delta.tar.gz > openreply-meta-unified-login-delta.tar.gz.sha256
+          cat delta/MANIFEST
+          ls -lh openreply-meta-unified-login-delta.tar.gz
+          {
+            echo "### Runtime delta"
+            echo '```'
+            cat delta/MANIFEST
+            cat openreply-meta-unified-login-delta.tar.gz.sha256
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: openreply-meta-unified-login-delta
+          path: |
+            openreply-meta-unified-login-delta.tar.gz
+            openreply-meta-unified-login-delta.tar.gz.sha256
+          retention-days: 7
+          if-no-files-found: error

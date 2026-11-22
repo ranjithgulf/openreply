@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { MetaLoginMethod } from "@/lib/meta/login-method";
 
 const HEX_32_BYTE = /^[a-f0-9]{64}$/i;
 
@@ -36,10 +37,29 @@ const INSTAGRAM_OAUTH_ENV = [
   "NEXTAUTH_SECRET",
 ] as const;
 
-export function getMissingInstagramOAuthEnv(): string[] {
-  return INSTAGRAM_OAUTH_ENV.filter((name) => {
+// Facebook Login for Business ("Unified Login" in Meta's dashboard). The app
+// ID is the Meta App ID from App settings, Basic; the configuration ID comes
+// from Facebook Login for Business, Configurations.
+const FACEBOOK_OAUTH_ENV = [
+  "FACEBOOK_APP_ID",
+  "FACEBOOK_APP_SECRET",
+  "META_LOGIN_CONFIG_ID",
+  "ENCRYPTION_KEY",
+  "NEXTAUTH_SECRET",
+] as const;
+
+// Values copied unchanged from .env.example ("your-instagram-app-id"). They
+// are non-empty, so without this check the connect flow sends them to Meta,
+// which answers with an unhelpful "page isn't available".
+const PLACEHOLDER_VALUE = /^(your[-_]|change[-_]?me$|placeholder$)/i;
+
+export function getMissingInstagramOAuthEnv(
+  method: MetaLoginMethod = "instagram"
+): string[] {
+  const required = method === "facebook" ? FACEBOOK_OAUTH_ENV : INSTAGRAM_OAUTH_ENV;
+  return required.filter((name) => {
     const value = process.env[name];
-    if (!value) return true;
+    if (!value || PLACEHOLDER_VALUE.test(value.trim())) return true;
     // A malformed key fails later inside encryptToken, after the user has
     // already round-tripped through Meta — catch the bad format here instead.
     return name === "ENCRYPTION_KEY" && !HEX_32_BYTE.test(value);

@@ -5,7 +5,8 @@ import {
   randomBytes,
   timingSafeEqual,
 } from "crypto";
-import { getEncryptionKeyHex, requireEnv } from "@/lib/env";
+import { getEncryptionKeyHex, getMetaGraphApiVersion, requireEnv } from "@/lib/env";
+import type { MetaLoginMethod } from "@/lib/meta/login-method";
 
 // Instagram API with Instagram Login authorizes on www.instagram.com. The old
 // api.instagram.com/oauth/authorize host belonged to the retired Basic Display
@@ -22,6 +23,12 @@ const STATE_MAX_AGE_MS = 10 * 60 * 1000;
 interface OAuthStatePayload {
   workspaceId: string;
   ts: number;
+  /**
+   * The flow that started this round trip. Both flows share one callback URL,
+   * so the callback reads this to know which token exchange to run. A state
+   * without the field (minted before it existed) means "instagram".
+   */
+  method?: MetaLoginMethod;
 }
 
 function base64UrlEncode(value: string): string {
@@ -38,9 +45,12 @@ function signState(payload: string): string {
     .digest("base64url");
 }
 
-export function createOAuthState(workspaceId: string): string {
+export function createOAuthState(
+  workspaceId: string,
+  method: MetaLoginMethod = "instagram"
+): string {
   const payload = base64UrlEncode(
-    JSON.stringify({ workspaceId, ts: Date.now() } satisfies OAuthStatePayload)
+    JSON.stringify({ workspaceId, ts: Date.now(), method } satisfies OAuthStatePayload)
   );
   return `${payload}.${signState(payload)}`;
 }
@@ -81,6 +91,12 @@ export function verifyOAuthState(state: string | null): OAuthStatePayload | null
       return null;
     }
 
+    if (parsed.method === undefined) {
+      parsed.method = "instagram";
+    } else if (parsed.method !== "instagram" && parsed.method !== "facebook") {
+      return null;
+    }
+
     return parsed;
   } catch {
     return null;
@@ -98,6 +114,29 @@ export function getAuthorizationUrl(redirectUri: string, state: string): string 
   });
 
   return `${INSTAGRAM_OAUTH_URL}?${params.toString()}`;
+}
+
+/**
+ * Facebook Login for Business ("API setup with Unified Login" in Meta's
+ * dashboard). With a configuration ID, the permissions, token type and assets
+ * come from that configuration, so no `scope` is sent.
+ * `override_default_response_type` makes the dialog return a code even for a
+ * configuration whose default response is a token.
+ */
+export function getFacebookAuthorizationUrl(
+  redirectUri: string,
+  state: string
+): string {
+  const params = new URLSearchParams({
+    client_id: requireEnv("FACEBOOK_APP_ID"),
+    redirect_uri: redirectUri,
+    config_id: requireEnv("META_LOGIN_CONFIG_ID"),
+    response_type: "code",
+    override_default_response_type: "true",
+    state,
+  });
+
+  return `https://www.facebook.com/${getMetaGraphApiVersion()}/dialog/oauth?${params.toString()}`;
 }
 
 export async function exchangeCodeForToken(
