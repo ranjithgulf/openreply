@@ -25,6 +25,7 @@ import {
 
 const IG_TOKEN = "IGAAtest-instagram-token";
 const PAGE_TOKEN = "EAAtest-page-token";
+type FetchLike = (url: string, init?: RequestInit) => Promise<Response>;
 const KEY = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
 function json(body: unknown, url = "https://graph.example/") {
@@ -140,7 +141,7 @@ describe("authorization URLs", () => {
 
 describe("Graph routing by token", () => {
   it("sends Instagram Login messages to graph.instagram.com/{ig-id}/messages", async () => {
-    const fetchMock = vi.fn(async () => json({ recipient_id: "u", message_id: "m" }));
+    const fetchMock = vi.fn<FetchLike>(async () => json({ recipient_id: "u", message_id: "m" }));
     vi.stubGlobal("fetch", fetchMock);
     await sendDirectMessage(IG_TOKEN, "17841400000000000", "user", "hi");
     expect(fetchMock.mock.calls[0][0]).toBe(
@@ -149,13 +150,13 @@ describe("Graph routing by token", () => {
   });
 
   it("sends Unified Login messages and private replies through the Page", async () => {
-    const fetchMock = vi.fn(async () => json({ recipient_id: "u", message_id: "m" }));
+    const fetchMock = vi.fn<FetchLike>(async () => json({ recipient_id: "u", message_id: "m" }));
     vi.stubGlobal("fetch", fetchMock);
     await sendDirectMessage(PAGE_TOKEN, "17841400000000000", "user", "hi");
     await sendPrivateReply(PAGE_TOKEN, "17841400000000000", "comment", "hi");
     expect(fetchMock.mock.calls[0][0]).toBe("https://graph.facebook.com/v25.0/me/messages");
     expect(fetchMock.mock.calls[1][0]).toBe("https://graph.facebook.com/v25.0/me/messages");
-    expect(JSON.parse(fetchMock.mock.calls[1][1].body).recipient).toEqual({
+    expect(JSON.parse(String(fetchMock.mock.calls[1][1]?.body)).recipient).toEqual({
       comment_id: "comment",
     });
   });
@@ -185,7 +186,7 @@ describe("Graph routing by token", () => {
   });
 
   it("subscribes the Page for Unified Login and the IG account otherwise", async () => {
-    const fetchMock = vi.fn(async () => json({ success: true }));
+    const fetchMock = vi.fn<FetchLike>(async () => json({ success: true }));
     vi.stubGlobal("fetch", fetchMock);
     await subscribeInstagramAccountToWebhooks("17841499", PAGE_TOKEN);
     await subscribeInstagramAccountToWebhooks("17841499", IG_TOKEN);
