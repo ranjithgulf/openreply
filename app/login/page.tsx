@@ -3,6 +3,7 @@ import { getI18n } from "@/lib/i18n/server";
 import { getCampaignTemplate } from "@/lib/templates/campaign-templates";
 import { DemoNotice } from "@/components/demo-notice";
 import { isPublicDemoHost } from "@/lib/env";
+import { ZOHO_PROVIDER_ID, isZohoSsoEnabled } from "@/lib/zoho-sso";
 
 const GITHUB_URL = "https://github.com/diwenne/openreply";
 const SETUP_DOCS_URL = `${GITHUB_URL}/blob/main/docs/setup.md`;
@@ -22,6 +23,8 @@ export default async function LoginPage({
     checkEmail?: string;
     callbackUrl?: string;
     template?: string;
+    error?: string;
+    signedOut?: string;
   }>;
 }) {
   const { t } = await getI18n();
@@ -69,6 +72,25 @@ export default async function LoginPage({
     });
   }
 
+  const zohoEnabled = isZohoSsoEnabled();
+
+  async function signInWithZoho() {
+    "use server";
+    await signIn(ZOHO_PROVIDER_ID, { redirectTo: callbackUrl });
+  }
+
+  // `error` comes from Auth.js (pages.error) or from the Zoho sign-in callback.
+  const errorMessage = params.error
+    ? params.error === "ZohoAccessDenied" || params.error === "AccessDenied"
+      ? t("Zoho sign-in was not allowed. Ask your administrator to grant you access to OpenReply.")
+      : params.error === "OAuthAccountNotLinked"
+        ? t("An OpenReply account already uses this email. Sign in with a magic link first, then link Zoho in Settings.")
+        : params.error === "Verification"
+          ? t("This sign-in link is invalid or has expired.")
+          : t("Sign-in failed. Please try again.")
+    : null;
+  const signedOut = params.signedOut === "1";
+
   return (
     <div className="min-h-screen flex items-center justify-center px-6">
       <div className="w-full max-w-md">
@@ -86,6 +108,18 @@ export default async function LoginPage({
         <DemoNotice variant="panel" />
 
         <div className="panel rounded p-8 shadow-black/40">
+          {errorMessage && !checkEmail && (
+            <p role="alert" className="mb-5 border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300">
+              {errorMessage}
+            </p>
+          )}
+          {signedOut && !errorMessage && !checkEmail && (
+            <p role="status" className="mb-5 border border-border bg-surface p-3 text-sm text-muted">
+              {zohoEnabled
+                ? t("You are signed out of OpenReply. Your Zoho session may still be active.")
+                : t("You are signed out of OpenReply.")}
+            </p>
+          )}
           {selectedTemplate && !checkEmail && (
             <div className="mb-5 border border-accent/20 bg-accent/10 p-4">
               <p className="text-xs font-semibold uppercase tracking-wide text-accent">
@@ -105,6 +139,24 @@ export default async function LoginPage({
               </p>
             </div>
           ) : (
+            <>
+            {zohoEnabled && (
+              <>
+                <form action={signInWithZoho}>
+                  <button
+                    type="submit"
+                    className="w-full inline-flex items-center justify-center gap-2 rounded border border-border bg-surface px-6 py-3.5 text-sm font-semibold text-foreground transition-colors hover:border-accent/40"
+                  >
+                    {t("Sign in with Zoho")}
+                  </button>
+                </form>
+                <div className="my-5 flex items-center gap-3 text-xs uppercase tracking-wide text-muted">
+                  <span className="h-px flex-1 bg-border" />
+                  {t("or")}
+                  <span className="h-px flex-1 bg-border" />
+                </div>
+              </>
+            )}
             <form action={sendMagicLink} className="space-y-5">
               <div className="space-y-2">
                 <label
@@ -131,6 +183,7 @@ export default async function LoginPage({
                 {t("Email me a magic link")}
               </button>
             </form>
+            </>
           )}
         </div>
       </div>
